@@ -1,0 +1,46 @@
+<diagram program="umletino" version="14.3.0"><zoom_level>10</zoom_level><element><id>UMLClass</id><coordinates><x>610</x><y>729</y><w>260</w><h>190</h></coordinates><panel_attributes>Logins
+-
+&lt;&lt;pk&gt;&gt; uuid: UUID NOT NULL
+-
+username: varchar(30) NOT NULL
+role: varchar(15) NOT NULL
+password: bytea NOT NULL
+salt: bytea NOT NULL
+mem_cost: int2 NOT NULL
+rounds: int2 NOT NULL
+refresh_token: varchar(683)
+refresh_token_expires: timestamp
+refresh_token_revoked: boolean</panel_attributes><additional_attributes></additional_attributes></element><element><id>UMLClass</id><coordinates><x>960</x><y>769</y><w>300</w><h>110</h></coordinates><panel_attributes>Files
+-
+&lt;&lt;pk&gt;&gt; uuid: UUID NOT NULL
+&lt;&lt;fk&gt;&gt; owner: UUID NOT NULL
+-
+public: boolean NOT NULL
+path: varchar(100) NOT NULL
+mime: Mime NOT NULL</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>860</x><y>789</y><w>120</w><h>50</h></coordinates><panel_attributes>lt=-
+m1=1
+m2=0..n
+&lt;&lt;fk&gt;&gt; owner</panel_attributes><additional_attributes>10;20;100;20</additional_attributes></element><element><id>Relation</id><coordinates><x>850</x><y>581</y><w>140</w><h>170</h></coordinates><panel_attributes>lt=-
+m1=1
+m2=0..n
+&lt;&lt;fk&gt;&gt; owner</panel_attributes><additional_attributes>10;150;10;10;120;10</additional_attributes></element><element><id>UMLClass</id><coordinates><x>1030</x><y>669</y><w>160</w><h>70</h></coordinates><panel_attributes>Mime
+-
+image/jpeg
+image/png</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>1100</x><y>729</y><w>30</w><h>60</h></coordinates><panel_attributes>lt=&lt;&lt;&lt;-</panel_attributes><additional_attributes>10;10;10;40</additional_attributes></element><element><id>Relation</id><coordinates><x>1100</x><y>641</y><w>30</w><h>50</h></coordinates><panel_attributes>lt=&lt;&lt;&lt;-</panel_attributes><additional_attributes>10;30;10;10</additional_attributes></element><element><id>UMLClass</id><coordinates><x>970</x><y>470</y><w>280</w><h>180</h></coordinates><panel_attributes>File Reservations
+-
+&lt;&lt;pk&gt;&gt;uuid UUID NOT NULL
+&lt;&lt;fk&gt;&gt; owner: UUID NOT NULL
+-
+md5: bit[128] NOT NULL
+size: int2 NOT NULL
+mime: Mime NOT NULL
+chunks: int2 NOT NULL</panel_attributes><additional_attributes></additional_attributes></element><element><id>Relation</id><coordinates><x>1100</x><y>371</y><w>110</w><h>120</h></coordinates><panel_attributes>lt=-
+m1=1
+m2=2..n
+&lt;&lt;fk&gt;&gt; reservation</panel_attributes><additional_attributes>10;100;10;10</additional_attributes></element><element><id>UMLClass</id><coordinates><x>970</x><y>200</y><w>280</w><h>180</h></coordinates><panel_attributes>File Chunks
+-
+&lt;&lt;pk&gt;&gt;id serial2 NOT NULL
+&lt;&lt;fk&gt;&gt; reservation UUID NOT NULL
+-
+index: int2 NOT NULL
+path: varchar(100) NOT NULL</panel_attributes><additional_attributes></additional_attributes></element></diagram>

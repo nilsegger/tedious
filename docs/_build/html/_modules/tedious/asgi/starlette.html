@@ -1,0 +1,389 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>tedious.asgi.starlette &#8212; Tedious  documentation</title>
+    <link rel="stylesheet" href="../../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for tedious.asgi.starlette</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">typing</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Tuple</span>
+<span class="kn">import</span> <span class="nn">ujson</span>
+<span class="kn">from</span> <span class="nn">starlette.applications</span> <span class="kn">import</span> <span class="n">Starlette</span>
+<span class="kn">from</span> <span class="nn">starlette.authentication</span> <span class="kn">import</span> <span class="n">BaseUser</span><span class="p">,</span> <span class="n">AuthenticationBackend</span><span class="p">,</span> <span class="n">AuthenticationError</span><span class="p">,</span> <span class="n">AuthCredentials</span>
+<span class="kn">from</span> <span class="nn">starlette.middleware</span> <span class="kn">import</span> <span class="n">Middleware</span>
+<span class="kn">from</span> <span class="nn">starlette.middleware.authentication</span> <span class="kn">import</span> <span class="n">AuthenticationMiddleware</span>
+<span class="kn">from</span> <span class="nn">starlette.middleware.cors</span> <span class="kn">import</span> <span class="n">CORSMiddleware</span>
+<span class="kn">from</span> <span class="nn">starlette.middleware.gzip</span> <span class="kn">import</span> <span class="n">GZipMiddleware</span>
+<span class="kn">from</span> <span class="nn">starlette.routing</span> <span class="kn">import</span> <span class="n">Route</span>
+
+<span class="kn">from</span> <span class="nn">tedious.auth.jwt</span> <span class="kn">import</span> <span class="n">InvalidToken</span>
+<span class="kn">from</span> <span class="nn">tedious.mdl.fields</span> <span class="kn">import</span> <span class="n">StrField</span><span class="p">,</span> <span class="n">IntField</span>
+<span class="kn">from</span> <span class="nn">tedious.auth.auth</span> <span class="kn">import</span> <span class="n">UserNotFound</span><span class="p">,</span> <span class="n">InvalidPassword</span><span class="p">,</span> <span class="n">RefreshTokenNotFound</span><span class="p">,</span> <span class="n">RefreshTokenExpired</span><span class="p">,</span> <span class="n">RefreshTokenRevoked</span><span class="p">,</span> <span class="n">Auth</span><span class="p">,</span> <span class="n">Requester</span>
+<span class="kn">from</span> <span class="nn">tedious.mdl.model</span> <span class="kn">import</span> <span class="n">Model</span><span class="p">,</span> <span class="n">ValidationError</span>
+
+<span class="kn">from</span> <span class="nn">tedious.sql.interface</span> <span class="kn">import</span> <span class="n">SQLInterface</span><span class="p">,</span> <span class="n">SQLConnectionInterface</span>
+
+<span class="kn">from</span> <span class="nn">tedious.asgi.request_interface</span> <span class="kn">import</span> <span class="n">RequestInterface</span><span class="p">,</span> <span class="n">Methods</span>
+<span class="kn">from</span> <span class="nn">starlette.requests</span> <span class="kn">import</span> <span class="n">Request</span> <span class="k">as</span> <span class="n">StarletteRequest</span>
+<span class="kn">from</span> <span class="nn">starlette.responses</span> <span class="kn">import</span> <span class="n">PlainTextResponse</span> <span class="k">as</span> <span class="n">StarlettePlainTextResponse</span><span class="p">,</span> <span class="n">Response</span> <span class="k">as</span> <span class="n">StarletteResponse</span><span class="p">,</span> \
+    <span class="n">UJSONResponse</span> <span class="k">as</span> <span class="n">StarletteUJSONResponse</span>
+
+<span class="kn">import</span> <span class="nn">tedious.config</span>
+<span class="kn">from</span> <span class="nn">tedious.asgi.resource_controller_interface</span> <span class="kn">import</span> <span class="n">ResourceControllerInterface</span>
+<span class="kn">from</span> <span class="nn">tedious.asgi.resource_interface</span> <span class="kn">import</span> <span class="n">ResourceInterface</span><span class="p">,</span> <span class="n">HTTPBadRequest</span><span class="p">,</span> <span class="n">HTTPForbidden</span><span class="p">,</span> <span class="n">HTTPNotFound</span>
+<span class="kn">from</span> <span class="nn">tedious.asgi.response_interface</span> <span class="kn">import</span> <span class="n">PlainTextResponse</span><span class="p">,</span> <span class="n">BytesResponse</span><span class="p">,</span> <span class="n">JSONResponse</span><span class="p">,</span> <span class="n">SuccessfulResponse</span>
+
+
+<span class="k">class</span> <span class="nc">InvalidJSON</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Raised if JSON can not be decoded.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">BodyBytesTooLarge</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Raised  if body bytes exceed maximum size of body bytes allowed.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">RequestUser</span><span class="p">(</span><span class="n">BaseUser</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;The request user is solely for Starlette to know if user has been authenticated.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">requester</span><span class="p">:</span> <span class="n">Requester</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">requester</span> <span class="o">=</span> <span class="n">requester</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_authenticated</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;If true, user was successfully authenticated.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">requester</span><span class="o">.</span><span class="n">uuid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">display_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Display name of requester.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">requester</span><span class="o">.</span><span class="n">username</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">identity</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns uuid of requester.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">requester</span><span class="o">.</span><span class="n">uuid</span>
+
+
+<div class="viewcode-block" id="Request"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.starlette.Request">[docs]</a><span class="k">class</span> <span class="nc">Request</span><span class="p">(</span><span class="n">RequestInterface</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;This class makes Starlette_ requests readable by the tedious framework.</span>
+<span class="sd">    .. Starlette https://www.starlette.io/requests/</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;request&#39;</span><span class="p">,)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">StarletteRequest</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_request</span> <span class="o">=</span> <span class="n">request</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">requester</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Requester</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Instance of :class:`~tedious.auth.auth.Requester` if authenticated else None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span> <span class="n">RequestUser</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">requester</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">url</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns complete url as str.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">url</span><span class="o">.</span><span class="n">path</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">method</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Methods</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns HTTP methods as static attribute of :class:`~tedious.asgi.request_interface.Methods`.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;GET&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Methods</span><span class="o">.</span><span class="n">GET</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;POST&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Methods</span><span class="o">.</span><span class="n">POST</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;PUT&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Methods</span><span class="o">.</span><span class="n">PUT</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;DELETE&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Methods</span><span class="o">.</span><span class="n">DELETE</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unknown method &#39;</span><span class="si">{}</span><span class="s2">&#39;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">method</span><span class="p">))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">client</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Returns tuple of client ip and port.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">port</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">cookies</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns dict of cookies.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">cookies</span>
+
+<div class="viewcode-block" id="Request.get_body_bytes"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.starlette.Request.get_body_bytes">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">get_body_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Reads in body bytes from stream.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Body bytes.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            :class:`.BodyBytesTooLarge` if body bytes size exceeds maximum.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">_bytes</span> <span class="o">=</span> <span class="sa">b</span><span class="s1">&#39;&#39;</span>
+        <span class="k">async</span> <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="o">.</span><span class="n">stream</span><span class="p">():</span>
+            <span class="n">_bytes</span> <span class="o">+=</span> <span class="n">chunk</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">_bytes</span><span class="p">)</span> <span class="o">&gt;</span> <span class="nb">int</span><span class="p">(</span><span class="n">tedious</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">CONFIG</span><span class="p">[</span><span class="s2">&quot;ASGI&quot;</span><span class="p">][</span><span class="s2">&quot;max-body-size&quot;</span><span class="p">]):</span>
+                <span class="k">raise</span> <span class="n">BodyBytesTooLarge</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">_bytes</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">_bytes</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="Request.get_body_json"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.starlette.Request.get_body_json">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">get_body_json</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Reads in body bytes using :class:`~.Request.get_body_bytes` and decodes them do dict.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Dict containing body values.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            :class:`~.InvalidJSON` if body can not be decoded from JSON.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">_bytes</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_body_bytes</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">_bytes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InvalidJSON</span><span class="p">(</span><span class="s2">&quot;Body is empty.&quot;</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ujson</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">_bytes</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InvalidJSON</span><span class="p">(</span><span class="s2">&quot;Unable to convert body to JSON.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Request.get_header"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.starlette.Request.get_header">[docs]</a>    <span class="k">def</span> <span class="nf">get_header</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+<div class="viewcode-block" id="Request.get_param"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.starlette.Request.get_param">[docs]</a>    <span class="k">def</span> <span class="nf">get_param</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div></div>
+
+
+<span class="k">class</span> <span class="nc">_ExceptionResponse</span><span class="p">(</span><span class="n">Model</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">code</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="p">[</span>
+            <span class="n">StrField</span><span class="p">(</span><span class="s1">&#39;msg&#39;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">msg</span><span class="p">),</span>
+            <span class="n">IntField</span><span class="p">(</span><span class="s1">&#39;code&#39;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">code</span><span class="p">)</span>
+        <span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">BearerAuthorization</span><span class="p">(</span><span class="n">AuthenticationBackend</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Used to authenticate requester using HTTP header Authorization.&quot;&quot;&quot;</span>
+
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;db&#39;</span><span class="p">,)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">auth</span><span class="p">:</span> <span class="n">Auth</span> <span class="o">=</span> <span class="n">Auth</span><span class="p">()):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_auth</span> <span class="o">=</span> <span class="n">auth</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">authenticate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Extracts Authorization header, checks if Bearer token is given and signs in user.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request: Starlette request.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">              Tuple containing :class:`.~AuthCredentials` and :class:`.~RequestUser` instances.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            :class:`.~AuthenticationError`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="s2">&quot;Authorization&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="n">auth</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="p">[</span><span class="s2">&quot;Authorization&quot;</span><span class="p">]</span>
+
+        <span class="n">scheme</span><span class="p">,</span> <span class="n">token</span> <span class="o">=</span> <span class="n">auth</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">scheme</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">!=</span> <span class="s1">&#39;bearer&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">AuthenticationError</span><span class="p">(</span><span class="s2">&quot;Please use Bearer as authorization scheme.&quot;</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">payload</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_auth</span><span class="o">.</span><span class="n">validate_token</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">audience</span><span class="o">=</span><span class="n">tedious</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">CONFIG</span><span class="p">[</span><span class="s2">&quot;TOKEN&quot;</span><span class="p">][</span><span class="s2">&quot;audience&quot;</span><span class="p">])</span>
+            <span class="n">requester</span> <span class="o">=</span> <span class="n">Requester</span><span class="p">(</span><span class="n">uuid</span><span class="o">=</span><span class="n">payload</span><span class="p">[</span><span class="s1">&#39;uid&#39;</span><span class="p">],</span> <span class="n">username</span><span class="o">=</span><span class="n">payload</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">],</span> <span class="n">role</span><span class="o">=</span><span class="n">payload</span><span class="p">[</span><span class="s1">&#39;role&#39;</span><span class="p">])</span>
+            <span class="k">return</span> <span class="n">AuthCredentials</span><span class="p">([</span><span class="s2">&quot;authenticated&quot;</span><span class="p">]),</span> <span class="n">RequestUser</span><span class="p">(</span><span class="n">requester</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">InvalidToken</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">AuthenticationError</span><span class="p">(</span><span class="s2">&quot;Token is invalid.&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="ResourceController"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.starlette.ResourceController">[docs]</a><span class="k">class</span> <span class="nc">ResourceController</span><span class="p">(</span><span class="n">ResourceControllerInterface</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Implementation of :class:`~tedious.asgi.resource_controller_interface.ResourceControllerInterface` for Starlette.&quot;&quot;&quot;</span>
+
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;database&#39;</span><span class="p">,)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">database</span><span class="p">:</span> <span class="n">SQLInterface</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">database</span> <span class="o">=</span> <span class="n">database</span>
+
+<div class="viewcode-block" id="ResourceController.handle_exceptions"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.starlette.ResourceController.handle_exceptions">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">handle_exceptions</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exception</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Handles various exceptions and converts them into :class:`~tedious.asgi.response_interface.ResponseInterface`&quot;&quot;&quot;</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exception</span><span class="p">,</span> <span class="n">ValidationError</span><span class="p">):</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">_ExceptionResponse</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="n">exception</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span> <span class="n">code</span><span class="o">=</span><span class="mi">422</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exception</span><span class="p">,</span> <span class="p">(</span><span class="n">UserNotFound</span><span class="p">,</span> <span class="n">InvalidPassword</span><span class="p">)):</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">_ExceptionResponse</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="s2">&quot;Unable to find user.&quot;</span><span class="p">,</span> <span class="n">code</span><span class="o">=</span><span class="mi">404</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exception</span><span class="p">,</span> <span class="p">(</span><span class="n">RefreshTokenNotFound</span><span class="p">,</span> <span class="n">RefreshTokenExpired</span><span class="p">,</span> <span class="n">RefreshTokenRevoked</span><span class="p">)):</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">_ExceptionResponse</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="s2">&quot;Invalid refresh token.&quot;</span><span class="p">,</span> <span class="n">code</span><span class="o">=</span><span class="mi">400</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exception</span><span class="p">,</span> <span class="n">HTTPBadRequest</span><span class="p">):</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">_ExceptionResponse</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">exception</span><span class="p">),</span> <span class="n">code</span><span class="o">=</span><span class="mi">400</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exception</span><span class="p">,</span> <span class="n">HTTPForbidden</span><span class="p">):</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">_ExceptionResponse</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">exception</span><span class="p">),</span> <span class="n">code</span><span class="o">=</span><span class="mi">403</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exception</span><span class="p">,</span> <span class="n">HTTPNotFound</span><span class="p">):</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">_ExceptionResponse</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">exception</span><span class="p">),</span> <span class="n">code</span><span class="o">=</span><span class="mi">404</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">response</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">exception</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">JSONResponse</span><span class="p">(</span><span class="n">body</span><span class="o">=</span><span class="k">await</span> <span class="n">response</span><span class="o">.</span><span class="n">output</span><span class="p">([</span><span class="s1">&#39;msg&#39;</span><span class="p">,</span> <span class="s1">&#39;code&#39;</span><span class="p">]),</span> <span class="n">status_code</span><span class="o">=</span><span class="n">response</span><span class="p">[</span><span class="s2">&quot;code&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ResourceController.handle"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.starlette.ResourceController.handle">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">handle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">StarletteRequest</span><span class="p">,</span> <span class="n">resource</span><span class="p">:</span> <span class="n">ResourceInterface</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">StarletteResponse</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Converts the StarletteRequest into a RequestInterface, passes this new object to the resource and converts the returned response into</span>
+<span class="sd">            a Starlette acceptable response.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request: Starlette request passed by route.</span>
+<span class="sd">            resource (:class:`~tedious.asgi.resource_interface.ResourceInterface`): Instance of resource which will be tasked with handling request.</span>
+<span class="sd">            **kwargs: Named parameters to be passed to :class:`~tedious.asgi.resource_interface.ResourceInterface.handle_request`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">connection</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">run_safe</span><span class="p">(</span><span class="n">resource</span><span class="o">.</span><span class="n">on_request</span><span class="p">,</span> <span class="n">Request</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="n">connection</span><span class="o">=</span><span class="n">connection</span><span class="p">,</span> <span class="n">logger</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="p">(</span><span class="n">BytesResponse</span><span class="p">,</span> <span class="n">PlainTextResponse</span><span class="p">)):</span>
+            <span class="n">response_class</span> <span class="o">=</span> <span class="n">StarlettePlainTextResponse</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">JSONResponse</span><span class="p">):</span>
+            <span class="n">response_class</span> <span class="o">=</span> <span class="n">StarletteUJSONResponse</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">SuccessfulResponse</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">StarlettePlainTextResponse</span><span class="p">(</span><span class="s1">&#39;ok&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> are not supported.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">response</span><span class="p">)))</span>
+
+        <span class="k">return</span> <span class="n">response_class</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">body</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">headers</span><span class="p">,</span> <span class="n">media_type</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">media_type</span><span class="p">,</span>
+                              <span class="n">status_code</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">)</span></div></div>
+
+
+<span class="k">class</span> <span class="nc">StarletteApp</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Complete implementation for the Starlette framework.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">controller</span><span class="p">:</span> <span class="n">ResourceController</span><span class="p">,</span> <span class="n">routes</span><span class="p">:</span> <span class="n">typing</span><span class="o">.</span><span class="n">List</span><span class="p">[</span><span class="n">Route</span><span class="p">]):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">controller</span> <span class="o">=</span> <span class="n">controller</span>
+
+        <span class="n">middleware</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">Middleware</span><span class="p">(</span><span class="n">CORSMiddleware</span><span class="p">,</span> <span class="n">allow_origins</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;leaper.ch&#39;</span><span class="p">]),</span>
+            <span class="n">Middleware</span><span class="p">(</span><span class="n">GZipMiddleware</span><span class="p">,</span> <span class="n">minimum_size</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
+            <span class="n">Middleware</span><span class="p">(</span><span class="n">AuthenticationMiddleware</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="n">BearerAuthorization</span><span class="p">())</span>
+        <span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">app</span> <span class="o">=</span> <span class="n">Starlette</span><span class="p">(</span>
+            <span class="n">debug</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">routes</span><span class="o">=</span><span class="n">routes</span><span class="p">,</span>
+            <span class="n">middleware</span><span class="o">=</span><span class="n">middleware</span><span class="p">,</span>
+            <span class="n">on_startup</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">on_startup</span><span class="p">],</span>
+            <span class="n">on_shutdown</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">on_shutdown</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">on_startup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Waits for database to connect.&quot;&quot;&quot;</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">controller</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">on_shutdown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Waits for database to disconnect.&quot;&quot;&quot;</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">controller</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">Tedious</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Content</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../asgi.html">Asynchronous Server Gateway Interface (ASGI)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../auth.html">Authentication</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, Nils Egger.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

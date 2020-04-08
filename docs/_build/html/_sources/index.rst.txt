@@ -1,0 +1,16 @@
+=============================
+The Tedious Backend Framework
+=============================
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Content
+
+   asgi
+   auth
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`search`

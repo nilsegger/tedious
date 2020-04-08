@@ -1,0 +1,13 @@
+<diagram program="umletino" version="14.3.0"><zoom_level>10</zoom_level><element><id>UMLClass</id><coordinates><x>470</x><y>379</y><w>260</w><h>190</h></coordinates><panel_attributes>Logins
+-
+&lt;&lt;pk&gt;&gt; uuid: UUID NOT NULL
+-
+username: varchar(30) NOT NULL
+role: varchar(15) NOT NULL
+password: bytea NOT NULL
+salt: bytea NOT NULL
+mem_cost: int2 NOT NULL
+rounds: int2 NOT NULL
+refresh_token: varchar(683)
+refresh_token_expires: timestamp
+refresh_token_revoked: boolean</panel_attributes><additional_attributes></additional_attributes></element></diagram>

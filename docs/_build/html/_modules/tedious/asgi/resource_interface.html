@@ -1,0 +1,209 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>tedious.asgi.resource_interface &#8212; Tedious  documentation</title>
+    <link rel="stylesheet" href="../../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for tedious.asgi.resource_interface</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">tedious.asgi.request_interface</span> <span class="kn">import</span> <span class="n">RequestInterface</span><span class="p">,</span> <span class="n">Methods</span>
+<span class="kn">from</span> <span class="nn">tedious.asgi.response_interface</span> <span class="kn">import</span> <span class="n">ResponseInterface</span>
+<span class="kn">from</span> <span class="nn">tedious.logger</span> <span class="kn">import</span> <span class="n">Logger</span>
+<span class="kn">from</span> <span class="nn">tedious.sql.interface</span> <span class="kn">import</span> <span class="n">SQLConnectionInterface</span>
+
+
+<span class="k">class</span> <span class="nc">RoutingError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Raised if on_* are called but not implemented.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">HTTPForbidden</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Raised if requester is not signed in.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">HTTPBadRequest</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Raised if request is not understandable by resource.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">HTTPNotFound</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Raised if requested resource was not found.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<div class="viewcode-block" id="ResourceInterface"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.resource_interface.ResourceInterface">[docs]</a><span class="k">class</span> <span class="nc">ResourceInterface</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;The resource interface executes the requested actions.&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="ResourceInterface.on_request"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.resource_interface.ResourceInterface.on_request">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">on_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">RequestInterface</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">logger</span><span class="p">:</span> <span class="n">Logger</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ResponseInterface</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Routes request according to HTTP method to either :class:`~.ResourceInterface.on_get`,</span>
+<span class="sd">            :class:`~.ResourceInterface.on_post`, :class:`~.ResourceInterface.on_put`, :class:`~.ResourceInterface.on_delete`</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (:class:`~tedious.asgi.request_interface.RequestInterface`): The request containing all information about the requester and what he would like to do.</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Short lived connection to database.</span>
+<span class="sd">            logger (:class:`~tedious.logger.Logger`): Logger used to track activity of requester.</span>
+<span class="sd">            **kwargs: Additional instances which will be passed along to the members mentioned above.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Instance of type :class:`~tedious.asgi.response_interface.ResponseInterface`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="n">Methods</span><span class="o">.</span><span class="n">GET</span><span class="p">:</span>
+            <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">on_get</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">connection</span><span class="p">,</span> <span class="n">logger</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="n">Methods</span><span class="o">.</span><span class="n">POST</span><span class="p">:</span>
+            <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">on_post</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">connection</span><span class="p">,</span> <span class="n">logger</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="n">Methods</span><span class="o">.</span><span class="n">PUT</span><span class="p">:</span>
+            <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">on_put</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">connection</span><span class="p">,</span> <span class="n">logger</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="n">Methods</span><span class="o">.</span><span class="n">DELETE</span><span class="p">:</span>
+            <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">on_delete</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">connection</span><span class="p">,</span> <span class="n">logger</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Method &#39;</span><span class="si">{}</span><span class="s2">&#39; is not supported.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">method</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="ResourceInterface.on_get"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.resource_interface.ResourceInterface.on_get">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">on_get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">RequestInterface</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">logger</span><span class="p">:</span> <span class="n">Logger</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ResponseInterface</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Called on HTTP GET requests.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (:class:`~tedious.asgi.request_interface.RequestInterface`): The request containing all information about the requester and what he would like to do.</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Short lived connection to database.</span>
+<span class="sd">            logger (:class:`~tedious.logger.Logger`): Logger used to track activity of requester.</span>
+<span class="sd">            **kwargs:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="n">RoutingError</span><span class="p">(</span><span class="s2">&quot;on_get is not implemented.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ResourceInterface.on_post"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.resource_interface.ResourceInterface.on_post">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">on_post</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">RequestInterface</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">logger</span><span class="p">:</span> <span class="n">Logger</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ResponseInterface</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Called on HTTP POST requests.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (:class:`~tedious.asgi.request_interface.RequestInterface`): The request containing all information about the requester and what he would like to do.</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Short lived connection to database.</span>
+<span class="sd">            logger (:class:`~tedious.logger.Logger`): Logger used to track activity of requester.</span>
+<span class="sd">            **kwargs:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="n">RoutingError</span><span class="p">(</span><span class="s2">&quot;on_post is not implemented.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ResourceInterface.on_put"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.resource_interface.ResourceInterface.on_put">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">on_put</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">RequestInterface</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">logger</span><span class="p">:</span> <span class="n">Logger</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ResponseInterface</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Called on HTTP PUT requests.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (:class:`~tedious.asgi.request_interface.RequestInterface`): The request containing all information about the requester and what he would like to do.</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Short lived connection to database.</span>
+<span class="sd">            logger (:class:`~tedious.logger.Logger`): Logger used to track activity of requester.</span>
+<span class="sd">            **kwargs:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="n">RoutingError</span><span class="p">(</span><span class="s2">&quot;on_put is not implemented.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ResourceInterface.on_delete"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.resource_interface.ResourceInterface.on_delete">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">on_delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">RequestInterface</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">logger</span><span class="p">:</span> <span class="n">Logger</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ResponseInterface</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Called on HTTP DELETE requests.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (:class:`~tedious.asgi.request_interface.RequestInterface`): The request containing all information about the requester and what he would like to do.</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Short lived connection to database.</span>
+<span class="sd">            logger (:class:`~tedious.logger.Logger`): Logger used to track activity of requester.</span>
+<span class="sd">            **kwargs:</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="n">RoutingError</span><span class="p">(</span><span class="s2">&quot;on_delete is not implemented.&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ResourceInterface.raise_not_found"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.resource_interface.ResourceInterface.raise_not_found">[docs]</a>    <span class="k">def</span> <span class="nf">raise_not_found</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="o">=</span><span class="s2">&quot;404 Not Found&quot;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Raises :class:`~.HTTPNotFound`.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="n">HTTPNotFound</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ResourceInterface.raise_forbidden"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.resource_interface.ResourceInterface.raise_forbidden">[docs]</a>    <span class="k">def</span> <span class="nf">raise_forbidden</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="o">=</span><span class="s2">&quot;403 Forbidden&quot;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Raises :class:`~.HTTPForbidden`.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="n">HTTPForbidden</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ResourceInterface.raise_bad_request"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.resource_interface.ResourceInterface.raise_bad_request">[docs]</a>    <span class="k">def</span> <span class="nf">raise_bad_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="o">=</span><span class="s2">&quot;404 Bad Request&quot;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Raises :class:`~.HTTPBadRequest`.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="n">HTTPBadRequest</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span></div></div>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">Tedious</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Content</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../asgi.html">Asynchronous Server Gateway Interface (ASGI)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../auth.html">Authentication</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, Nils Egger.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

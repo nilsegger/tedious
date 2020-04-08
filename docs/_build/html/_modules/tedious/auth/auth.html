@@ -1,0 +1,439 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>tedious.auth.auth &#8212; Tedious  documentation</title>
+    <link rel="stylesheet" href="../../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for tedious.auth.auth</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">hashlib</span>
+<span class="kn">import</span> <span class="nn">secrets</span>
+<span class="kn">import</span> <span class="nn">uuid</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span>
+<span class="kn">from</span> <span class="nn">tedious.auth.jwt</span> <span class="kn">import</span> <span class="n">JWTAuth</span>
+<span class="kn">from</span> <span class="nn">tedious.sql.interface</span> <span class="kn">import</span> <span class="n">SQLConnectionInterface</span>
+<span class="kn">import</span> <span class="nn">tedious.config</span>
+<span class="kn">import</span> <span class="nn">asyncpg</span>
+
+<span class="kn">from</span> <span class="nn">tedious.util</span> <span class="kn">import</span> <span class="n">create_uuid</span>
+
+
+<div class="viewcode-block" id="Requester"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Requester">[docs]</a><span class="k">class</span> <span class="nc">Requester</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;An instance of requester contains all necessary data to identify a user. UUID, username and role.&quot;&quot;&quot;</span>
+
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;uuid&#39;</span><span class="p">,</span> <span class="s1">&#39;username&#39;</span><span class="p">,</span> <span class="s1">&#39;role&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">uuid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">uuid</span> <span class="o">=</span> <span class="n">uuid</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">username</span> <span class="o">=</span> <span class="n">username</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">role</span> <span class="o">=</span> <span class="n">role</span></div>
+
+
+<div class="viewcode-block" id="UserNotFound"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.UserNotFound">[docs]</a><span class="k">class</span> <span class="nc">UserNotFound</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Raised when user was not found in database.&quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="InvalidPassword"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.InvalidPassword">[docs]</a><span class="k">class</span> <span class="nc">InvalidPassword</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Thrown if passwords do not match.&quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RefreshTokenNotFound"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.RefreshTokenNotFound">[docs]</a><span class="k">class</span> <span class="nc">RefreshTokenNotFound</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Thrown if refresh token can not be found in database.&quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RefreshTokenExpired"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.RefreshTokenExpired">[docs]</a><span class="k">class</span> <span class="nc">RefreshTokenExpired</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Thrown if refresh token expired.&quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="RefreshTokenRevoked"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.RefreshTokenRevoked">[docs]</a><span class="k">class</span> <span class="nc">RefreshTokenRevoked</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Thrown if refresh token has been manually revoked.&quot;&quot;&quot;</span>
+    <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="Auth"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth">[docs]</a><span class="k">class</span> <span class="nc">Auth</span><span class="p">(</span><span class="n">JWTAuth</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Implementation of JWTAuth which uses a table of users for :class:`~.Auth.register` and :class:`~.Auth.authenticate`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Use formula: int(4*(int(nBytes/3)) + 1 to predict base64 size of refresh_token, 683 is prediction for a refresh token of size 512</span>
+    <span class="n">CREATE_LOGINS_TABLE</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        CREATE TABLE IF NOT EXISTS logins(</span>
+<span class="s2">            uuid UUID PRIMARY KEY NOT NULL,</span>
+<span class="s2">            username varchar(30) NOT NULL,</span>
+<span class="s2">            role varchar(15) NOT NULL,</span>
+<span class="s2">            password bytea NOT NULL,</span>
+<span class="s2">            salt bytea NOT NULL,</span>
+<span class="s2">            mem_cost int2 NOT NULL,</span>
+<span class="s2">            rounds int2 NOT NULL,</span>
+<span class="s2">            refresh_token varchar(683),</span>
+<span class="s2">            refresh_token_expires timestamp,</span>
+<span class="s2">            refresh_token_revoked boolean</span>
+<span class="s2">        )</span>
+<span class="s2">    &quot;&quot;&quot;</span>
+
+    <span class="n">DROP_AUTH_TABLE_STMT</span> <span class="o">=</span> <span class="s2">&quot;DROP TABLE IF EXISTS logins&quot;</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_hash_password</span><span class="p">(</span><span class="n">password</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">salt</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span> <span class="n">memory_cost</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">rounds</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Generates hash of password + salt with scrypt, to better understand the parameters visit https://blog.filippo.io/the-scrypt-parameters/</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            password: Password of user.</span>
+<span class="sd">            salt: Random salt to increase password strength.</span>
+<span class="sd">            memory_cost: Memory cost to be used by SCRYPT.</span>
+<span class="sd">            rounds: Hash iterations.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Secure SCRYPT hash of password and salt.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">scrypt</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="nb">bytes</span><span class="p">(</span><span class="n">password</span><span class="p">,</span> <span class="s1">&#39;utf-8&#39;</span><span class="p">),</span> <span class="n">salt</span><span class="o">=</span><span class="n">salt</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="n">memory_cost</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="n">rounds</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">_uuid_exists</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">_uuid</span><span class="p">:</span> <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Checks if user with uuid already exists.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            _uuid: uuid to check</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">              True if user exists, else False.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">stmt</span> <span class="o">=</span> <span class="s2">&quot;SELECT exists (SELECT 1 FROM logins WHERE uuid=$1 LIMIT 1)&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="n">connection</span><span class="o">.</span><span class="n">fetch_value</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span> <span class="n">_uuid</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">_insert_authentication</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">requester</span><span class="p">:</span> <span class="n">Requester</span><span class="p">,</span> <span class="n">hashed_password</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span> <span class="n">salt</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span>
+                                     <span class="n">mem_cost</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+                                     <span class="n">rounds</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Requester</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Inserts new user into logins table.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            requester (:class:`~tedious.asgi.requester_interface.Requester`): User identification.</span>
+<span class="sd">            hashed_password: Hashed password of user.</span>
+<span class="sd">            salt: Salt which was used to generate hashed password.</span>
+<span class="sd">            mem_cost: Memory which was used to generate hashed password.</span>
+<span class="sd">            rounds: Hash iterations which were used to generate hashed password.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            requester</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">stmt</span> <span class="o">=</span> <span class="s2">&quot;INSERT INTO logins(uuid, username, role, password, salt, mem_cost, rounds) VALUES ($1, $2, $3, $4, $5, $6, $7);&quot;</span>
+        <span class="k">await</span> <span class="n">connection</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span> <span class="n">requester</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">requester</span><span class="o">.</span><span class="n">username</span><span class="p">,</span> <span class="n">requester</span><span class="o">.</span><span class="n">role</span><span class="p">,</span> <span class="n">hashed_password</span><span class="p">,</span> <span class="n">salt</span><span class="p">,</span> <span class="n">mem_cost</span><span class="p">,</span> <span class="n">rounds</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">requester</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">_update_authentication</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">requester</span><span class="p">:</span> <span class="n">Requester</span><span class="p">,</span> <span class="n">hashed_password</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                                     <span class="n">salt</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                                     <span class="n">mem_cost</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                                     <span class="n">rounds</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                                     <span class="n">refresh_token</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">refresh_token_expires</span><span class="p">:</span> <span class="n">datetime</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                                     <span class="n">refresh_token_revoked</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Updates entry in table where uuid = requester.uuid,</span>
+<span class="sd">            if param is None COALESCE chooses second option, which will be the current entry in column.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            requester (:class:`~tedious.asgi.requester_interface.Requester`): User identification.</span>
+<span class="sd">            hashed_password: Hashed password of user.</span>
+<span class="sd">            salt: Salt which was used to generate hashed password.</span>
+<span class="sd">            mem_cost: Memory which was used to generate hashed password.</span>
+<span class="sd">            rounds: Hash iterations which were used to generate hashed password.</span>
+<span class="sd">            refresh_token: Refresh token of user.</span>
+<span class="sd">            refresh_token_expires: datetime of point in time where refresh token will expire</span>
+<span class="sd">            refresh_token_revoked: bool if refresh token was manually revoked.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">stmt</span> <span class="o">=</span> <span class="s2">&quot;UPDATE logins SET username=COALESCE($1, username), role=COALESCE($2, role), password=COALESCE($3, password), salt=COALESCE($4, salt), mem_cost=COALESCE($5, mem_cost), rounds=COALESCE($6, rounds), refresh_token=COALESCE($7, refresh_token), refresh_token_expires=COALESCE($8, refresh_token_expires), refresh_token_revoked=COALESCE($9, refresh_token_revoked) WHERE uuid=$10&quot;</span>
+        <span class="k">await</span> <span class="n">connection</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span> <span class="n">requester</span><span class="o">.</span><span class="n">username</span><span class="p">,</span> <span class="n">requester</span><span class="o">.</span><span class="n">role</span><span class="p">,</span> <span class="n">hashed_password</span><span class="p">,</span> <span class="n">salt</span><span class="p">,</span> <span class="n">mem_cost</span><span class="p">,</span> <span class="n">rounds</span><span class="p">,</span> <span class="n">refresh_token</span><span class="p">,</span>
+                                 <span class="n">refresh_token_expires</span><span class="p">,</span> <span class="n">refresh_token_revoked</span><span class="p">,</span> <span class="n">requester</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">_query_where_username</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">username</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">asyncpg</span><span class="o">.</span><span class="n">Record</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns row of logins where username = username.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            username: Username to query for.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Row of username or None if row does not exist.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">stmt</span> <span class="o">=</span> <span class="s2">&quot;SELECT uuid, role, password, salt, mem_cost, rounds FROM logins WHERE username=$1 LIMIT 1&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="n">connection</span><span class="o">.</span><span class="n">fetch_row</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span> <span class="n">username</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">_query_where_refresh_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">refresh_token</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">asyncpg</span><span class="o">.</span><span class="n">Record</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns row where refresh token matches column.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            refresh_token: Refresh token to query for.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Row where refresh tokens match, if no row was found None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">stmt</span> <span class="o">=</span> <span class="s2">&quot;SELECT uuid, username, role, refresh_token_expires, refresh_token_revoked FROM logins WHERE refresh_token=$1 LIMIT 1&quot;</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="n">connection</span><span class="o">.</span><span class="n">fetch_row</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span> <span class="n">refresh_token</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Auth.register"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth.register">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">register</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">username</span><span class="p">,</span> <span class="n">password</span><span class="p">,</span> <span class="n">role</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Requester</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Registers user and creates new access token.</span>
+
+<span class="sd">       Args:</span>
+<span class="sd">           connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">           username: username of user.</span>
+<span class="sd">           password: password to hash.</span>
+<span class="sd">           role: role of user.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Returns :class:`~.Requester` containing new uuid of user.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError if uuid does already exist.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">_uuid</span> <span class="o">=</span> <span class="n">create_uuid</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_uuid_exists</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">_uuid</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;UUID already exists.&quot;</span><span class="p">)</span>
+
+        <span class="n">requester</span> <span class="o">=</span> <span class="n">Requester</span><span class="p">(</span><span class="n">uuid</span><span class="o">=</span><span class="n">_uuid</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="n">username</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">role</span><span class="p">)</span>
+        <span class="n">salt</span> <span class="o">=</span> <span class="n">secrets</span><span class="o">.</span><span class="n">token_bytes</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span>
+        <span class="n">mem_cost</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">tedious</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">CONFIG</span><span class="p">[</span><span class="s2">&quot;SCRYPT&quot;</span><span class="p">][</span><span class="s2">&quot;mem_cost&quot;</span><span class="p">])</span>
+        <span class="n">rounds</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">tedious</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">CONFIG</span><span class="p">[</span><span class="s2">&quot;SCRYPT&quot;</span><span class="p">][</span><span class="s2">&quot;rounds&quot;</span><span class="p">])</span>
+        <span class="n">password_hash</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_password</span><span class="p">(</span><span class="n">password</span><span class="p">,</span> <span class="n">salt</span><span class="p">)</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_insert_authentication</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">requester</span><span class="p">,</span> <span class="n">password_hash</span><span class="p">,</span> <span class="n">salt</span><span class="p">,</span> <span class="n">mem_cost</span><span class="p">,</span> <span class="n">rounds</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">requester</span></div>
+
+<div class="viewcode-block" id="Auth.update_role"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth.update_role">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">update_role</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">requester</span><span class="p">:</span> <span class="n">Requester</span><span class="p">,</span> <span class="n">role</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Updates role of requester.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            requester (:class:`~.Requester`): User identification.</span>
+<span class="sd">            role: New role of requester.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_update_authentication</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">Requester</span><span class="p">(</span><span class="n">uuid</span><span class="o">=</span><span class="n">requester</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">role</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="Auth.delete"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth.delete">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">requester</span><span class="p">:</span> <span class="n">Requester</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Deletes requester account.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            requester (:class:`~.Requester`): User identification.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">stmt</span> <span class="o">=</span> <span class="s2">&quot;DELETE FROM logins WHERE uuid=$1&quot;</span>
+        <span class="k">await</span> <span class="n">connection</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span> <span class="n">requester</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Auth.authenticate"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth.authenticate">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">authenticate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">username</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">password</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Requester</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Firstly tries to find username in table, if query returns empty, user does not exist and to prevent user enumeration a password is fake hashed.</span>
+<span class="sd">            if the user is found, the salt is extracted and used to generate proper hash, this hash is then compared to the hash from the table.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            username: Username given by user</span>
+<span class="sd">            password: password given by requester.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Instance of :class:`~.Requester` identifying user.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            InvalidPassword if password was incorrect.</span>
+<span class="sd">            UserNotFound if given username does not exist in table</span>
+
+<span class="sd">        todo:</span>
+<span class="sd">            recognise if user is being brute-forced, if so, increase time it takes to finish request (time.sleep)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">row</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_query_where_username</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">username</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_hash_password</span><span class="p">(</span><span class="n">password</span><span class="p">,</span> <span class="s2">&quot;fake-salt&quot;</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s1">&#39;utf-8&#39;</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">UserNotFound</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">untrusted_hashed_password</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_hash_password</span><span class="p">(</span><span class="n">password</span><span class="p">,</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;salt&#39;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;mem_cost&#39;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;rounds&#39;</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">untrusted_hashed_password</span> <span class="o">!=</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;password&#39;</span><span class="p">]:</span>
+                <span class="k">raise</span> <span class="n">InvalidPassword</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">Requester</span><span class="p">(</span><span class="n">uuid</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s1">&#39;uuid&#39;</span><span class="p">],</span> <span class="n">role</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;role&quot;</span><span class="p">])</span></div>
+
+<div class="viewcode-block" id="Auth.create_refresh_token"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth.create_refresh_token">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">create_refresh_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">requester</span><span class="p">:</span> <span class="n">Requester</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Creates random string and saves refresh token.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            requester (:class:`~.Requester`): User identification.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Randomly generated refresh token.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">token</span> <span class="o">=</span> <span class="n">secrets</span><span class="o">.</span><span class="n">token_urlsafe</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">tedious</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">CONFIG</span><span class="p">[</span><span class="s1">&#39;TOKEN&#39;</span><span class="p">][</span><span class="s1">&#39;refresh-token-bytes&#39;</span><span class="p">]))</span>
+        <span class="n">lifespan</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">tedious</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">CONFIG</span><span class="p">[</span><span class="s1">&#39;TOKEN&#39;</span><span class="p">][</span><span class="s1">&#39;refresh-token-lifespan&#39;</span><span class="p">])</span>
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_refresh_token</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">requester</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="n">lifespan</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">token</span></div>
+
+<div class="viewcode-block" id="Auth.save_refresh_token"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth.save_refresh_token">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">save_refresh_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">requester</span><span class="p">:</span> <span class="n">Requester</span><span class="p">,</span> <span class="n">refresh_token</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">expires</span><span class="p">:</span> <span class="n">datetime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Updates row entry to include refresh token, refresh_token_expires and refresh_token_expired.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            requester (:class:`~.Requester`): User identification.</span>
+<span class="sd">            refresh_token: Actual refresh token.</span>
+<span class="sd">            expires: Point in time when token is supposed to expire.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_update_authentication</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">requester</span><span class="o">=</span><span class="n">requester</span><span class="p">,</span> <span class="n">refresh_token</span><span class="o">=</span><span class="n">refresh_token</span><span class="p">,</span>
+                                          <span class="n">refresh_token_expires</span><span class="o">=</span><span class="n">expires</span><span class="p">,</span>
+                                          <span class="n">refresh_token_revoked</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Auth.retrieve_refresh_token"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth.retrieve_refresh_token">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">retrieve_refresh_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">requester</span><span class="p">:</span> <span class="n">Requester</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Retrieves existing refresh token for requester.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            requester (:class:`~.Requester`): User identification.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Refresh token of requester.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="k">await</span> <span class="n">connection</span><span class="o">.</span><span class="n">fetch_value</span><span class="p">(</span>
+            <span class="s2">&quot;SELECT refresh_token FROM logins WHERE uuid=$1 AND refresh_token_expires &gt; $2 LIMIT 1&quot;</span><span class="p">,</span>
+            <span class="n">requester</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">())</span></div>
+
+<div class="viewcode-block" id="Auth.validate_refresh_token"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth.validate_refresh_token">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">validate_refresh_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">refresh_token</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Requester</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Validates refresh token for expiration date or if it has been manually revoked.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            refresh_token: refresh token received by user</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            RefreshTokenNotFound: if token does not exist</span>
+<span class="sd">            RefreshTokenExpired: if token has expired</span>
+<span class="sd">            RefreshTokenRevoked: if token has been manually revoked</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">row</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_query_where_refresh_token</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">refresh_token</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">RefreshTokenNotFound</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;refresh_token_expires&#39;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="n">RefreshTokenExpired</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;refresh_token_revoked&#39;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="n">RefreshTokenRevoked</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">Requester</span><span class="p">(</span><span class="n">uuid</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s1">&#39;uuid&#39;</span><span class="p">],</span> <span class="n">username</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s1">&#39;username&#39;</span><span class="p">],</span> <span class="n">role</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;role&quot;</span><span class="p">])</span></div>
+
+<div class="viewcode-block" id="Auth.revoke_refresh_token"><a class="viewcode-back" href="../../../auth.html#tedious.auth.auth.Auth.revoke_refresh_token">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">revoke_refresh_token</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">SQLConnectionInterface</span><span class="p">,</span> <span class="n">requester</span><span class="p">:</span> <span class="n">Requester</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Revokes refresh token by setting refresh_token_revoked to true.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            connection (:class:`~tedious.sql.interface.SQLConnectionInterface`): Connection to database.</span>
+<span class="sd">            requester (:class:`~.Requester`): User identification.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_update_authentication</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">requester</span><span class="p">,</span> <span class="n">refresh_token_revoked</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div></div>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">Tedious</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Content</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../asgi.html">Asynchronous Server Gateway Interface (ASGI)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../auth.html">Authentication</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, Nils Egger.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -1,0 +1,526 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>Authentication &#8212; Tedious  documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/language_data.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Asynchronous Server Gateway Interface (ASGI)" href="asgi.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="authentication">
+<h1>Authentication<a class="headerlink" href="#authentication" title="Permalink to this headline">¶</a></h1>
+<div class="contents local topic" id="contents">
+<ul class="simple">
+<li><p><a class="reference internal" href="#introduction" id="id2">Introduction</a></p>
+<ul>
+<li><p><a class="reference internal" href="#header" id="id3">Header</a></p></li>
+<li><p><a class="reference internal" href="#payload" id="id4">Payload</a></p></li>
+<li><p><a class="reference internal" href="#authentication-flow" id="id5">Authentication Flow</a></p></li>
+<li><p><a class="reference internal" href="#refresh-tokens" id="id6">Refresh tokens</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#classes" id="id7">Classes</a></p>
+<ul>
+<li><p><a class="reference internal" href="#requester" id="id8">Requester</a></p></li>
+<li><p><a class="reference internal" href="#jwtauth" id="id9">JWTAuth</a></p></li>
+<li><p><a class="reference internal" href="#auth" id="id10">Auth</a></p></li>
+<li><p><a class="reference internal" href="#exceptions" id="id11">Exceptions</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#how-to" id="id12">How to</a></p>
+<ul>
+<li><p><a class="reference internal" href="#registering-a-user" id="id13">Registering a user</a></p></li>
+<li><p><a class="reference internal" href="#signing-in" id="id14">Signing in</a></p></li>
+<li><p><a class="reference internal" href="#creating-an-access-token" id="id15">Creating an access token</a></p></li>
+</ul>
+</li>
+</ul>
+</div>
+<div class="section" id="introduction">
+<h2><a class="toc-backref" href="#id2">Introduction</a><a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
+<p>On sign in the user retrieves an access token. These tokens consist of three parts, the header, payload and signature, all three separated by dots.
+The header and payload are key value constructs (JSON), encoded in base64.
+The signature is created by encoding the header and payload with a private key, which obviously has to be kept private.
+The matching public key can be distributed to verify the token.</p>
+<div class="section" id="header">
+<h3><a class="toc-backref" href="#id3">Header</a><a class="headerlink" href="#header" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p>‘typ’: type of token, should be ‘JWT’</p></li>
+<li><p>‘alg’: algorithm used to encode signature</p></li>
+<li><p>‘kid’: identifies public key</p></li>
+</ul>
+</div>
+<div class="section" id="payload">
+<h3><a class="toc-backref" href="#id4">Payload</a><a class="headerlink" href="#payload" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p>‘exp’: Expiration date</p></li>
+<li><p>‘nbf’: Not before, datetime at which token becomes valid for use</p></li>
+<li><p>‘iss’: Issuer of token</p></li>
+<li><p>‘aud’: Audience, service for which token is meant to be used by</p></li>
+<li><p>‘iat’: Time at which token was issued</p></li>
+<li><p>additional claims like role, name, uid</p></li>
+</ul>
+</div>
+<div class="section" id="authentication-flow">
+<h3><a class="toc-backref" href="#id5">Authentication Flow</a><a class="headerlink" href="#authentication-flow" title="Permalink to this headline">¶</a></h3>
+<ol class="arabic simple">
+<li><p>User signs in and retrieves a token.</p></li>
+<li><p>User decodes payload, validates iss and exp.</p></li>
+<li><dl class="simple">
+<dt>User requests profile data, <strong>sends token along as HTTP Authorization header with type bearer</strong>, token gets verified using public key, public key is determined by kid</dt><dd><p>iss, exp, nbf, aud is validated.</p>
+</dd>
+</dl>
+</li>
+</ol>
+</div>
+<div class="section" id="refresh-tokens">
+<h3><a class="toc-backref" href="#id6">Refresh tokens</a><a class="headerlink" href="#refresh-tokens" title="Permalink to this headline">¶</a></h3>
+<p>To stop the platform from continuously asking the user to authenticate and limiting the lifespan of an access token,
+refresh tokens are sent along on sign in.
+A refresh token is a random string which does not contain any information. When an access token dies, the user can send their refresh token
+to the api and retrieve a fresh access token after their activity is checked for malicious actions.
+Refresh tokens have to be stored securely and there has to be the option of revoking refresh tokens.</p>
+</div>
+</div>
+<div class="section" id="classes">
+<h2><a class="toc-backref" href="#id7">Classes</a><a class="headerlink" href="#classes" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="requester">
+<h3><a class="toc-backref" href="#id8">Requester</a><a class="headerlink" href="#requester" title="Permalink to this headline">¶</a></h3>
+<dl class="class">
+<dt id="tedious.auth.auth.Requester">
+<em class="property">class </em><code class="sig-prename descclassname">tedious.auth.auth.</code><code class="sig-name descname">Requester</code><span class="sig-paren">(</span><em class="sig-param">uuid=None</em>, <em class="sig-param">username=None</em>, <em class="sig-param">role=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/tedious/auth/auth.html#Requester"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Requester" title="Permalink to this definition">¶</a></dt>
+<dd><p>An instance of requester contains all necessary data to identify a user. UUID, username and role.</p>
+</dd></dl>
+
+</div>
+<div class="section" id="jwtauth">
+<h3><a class="toc-backref" href="#id9">JWTAuth</a><a class="headerlink" href="#jwtauth" title="Permalink to this headline">¶</a></h3>
+<dl class="class">
+<dt id="tedious.auth.jwt.JWTAuth">
+<em class="property">class </em><code class="sig-prename descclassname">tedious.auth.jwt.</code><code class="sig-name descname">JWTAuth</code><a class="reference internal" href="_modules/tedious/auth/jwt.html#JWTAuth"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.jwt.JWTAuth" title="Permalink to this definition">¶</a></dt>
+<dd><p>Implementation for JSON Web Tokens.</p>
+<dl class="method">
+<dt id="tedious.auth.jwt.JWTAuth.create_token">
+<em class="property">async </em><code class="sig-name descname">create_token</code><span class="sig-paren">(</span><em class="sig-param">audience=None</em>, <em class="sig-param">claims=None</em><span class="sig-paren">)</span> &#x2192; bytes<a class="reference internal" href="_modules/tedious/auth/jwt.html#JWTAuth.create_token"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.jwt.JWTAuth.create_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>Creates access token.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>audience</strong> (<em>str</em>) – Identifier for whom this token is meant to be used by.</p></li>
+<li><p><strong>claims</strong> (<em>dict</em>) – Custom claims which will be added to token payload.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Freshly created token as bytes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.jwt.JWTAuth.retrieve_private_key">
+<em class="property">async </em><code class="sig-name descname">retrieve_private_key</code><span class="sig-paren">(</span><span class="sig-paren">)</span> &#x2192; Tuple[str, str]<a class="reference internal" href="_modules/tedious/auth/jwt.html#JWTAuth.retrieve_private_key"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.jwt.JWTAuth.retrieve_private_key" title="Permalink to this definition">¶</a></dt>
+<dd><p>Selects random private key from directory, reads it and returns it as string. The filename will be converted into a public key identifier.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Private key as string and public key identifier.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.jwt.JWTAuth.retrieve_public_key">
+<em class="property">async </em><code class="sig-name descname">retrieve_public_key</code><span class="sig-paren">(</span><em class="sig-param">kid: str</em><span class="sig-paren">)</span> &#x2192; str<a class="reference internal" href="_modules/tedious/auth/jwt.html#JWTAuth.retrieve_public_key"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.jwt.JWTAuth.retrieve_public_key" title="Permalink to this definition">¶</a></dt>
+<dd><p>Retrieves public key from directory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Public key as string.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.jwt.JWTAuth.validate_token">
+<em class="property">async </em><code class="sig-name descname">validate_token</code><span class="sig-paren">(</span><em class="sig-param">token: bytes</em>, <em class="sig-param">audience=None</em><span class="sig-paren">)</span> &#x2192; Dict[str, str]<a class="reference internal" href="_modules/tedious/auth/jwt.html#JWTAuth.validate_token"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.jwt.JWTAuth.validate_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>Firstly validates header of token and retrieves public key identifier, then verifies signature and decodes payload.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>token</strong> (<em>bytes</em>) – Encoded token.</p></li>
+<li><p><strong>audience</strong> – Self identifier. If tokens audience does not match an exception will get thrown.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Payload of token as dict.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="auth">
+<h3><a class="toc-backref" href="#id10">Auth</a><a class="headerlink" href="#auth" title="Permalink to this headline">¶</a></h3>
+<dl class="class">
+<dt id="tedious.auth.auth.Auth">
+<em class="property">class </em><code class="sig-prename descclassname">tedious.auth.auth.</code><code class="sig-name descname">Auth</code><a class="reference internal" href="_modules/tedious/auth/auth.html#Auth"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth" title="Permalink to this definition">¶</a></dt>
+<dd><p>Implementation of JWTAuth which uses a table of users for <code class="xref py py-class docutils literal notranslate"><span class="pre">register</span></code> and <code class="xref py py-class docutils literal notranslate"><span class="pre">authenticate</span></code>.</p>
+<dl class="method">
+<dt id="tedious.auth.auth.Auth.authenticate">
+<em class="property">async </em><code class="sig-name descname">authenticate</code><span class="sig-paren">(</span><em class="sig-param">connection: tedious.sql.interface.SQLConnectionInterface</em>, <em class="sig-param">username: str</em>, <em class="sig-param">password: str</em><span class="sig-paren">)</span> &#x2192; tedious.auth.auth.Requester<a class="reference internal" href="_modules/tedious/auth/auth.html#Auth.authenticate"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth.authenticate" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="simple">
+<dt>Firstly tries to find username in table, if query returns empty, user does not exist and to prevent user enumeration a password is fake hashed.</dt><dd><p>if the user is found, the salt is extracted and used to generate proper hash, this hash is then compared to the hash from the table.</p>
+</dd>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>connection</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">SQLConnectionInterface</span></code>) – Connection to database.</p></li>
+<li><p><strong>username</strong> – Username given by user</p></li>
+<li><p><strong>password</strong> – password given by requester.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Instance of <a class="reference internal" href="#tedious.auth.auth.Requester" title="tedious.auth.auth.Requester"><code class="xref py py-class docutils literal notranslate"><span class="pre">Requester</span></code></a> identifying user.</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>InvalidPassword if password was incorrect.</strong> – </p></li>
+<li><p><strong>UserNotFound if given username does not exist in table</strong> – </p></li>
+</ul>
+</dd>
+</dl>
+<div class="admonition-todo admonition" id="id1">
+<p class="admonition-title">Todo</p>
+<p>recognise if user is being brute-forced, if so, increase time it takes to finish request (time.sleep)</p>
+</div>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.auth.Auth.create_refresh_token">
+<em class="property">async </em><code class="sig-name descname">create_refresh_token</code><span class="sig-paren">(</span><em class="sig-param">connection: tedious.sql.interface.SQLConnectionInterface</em>, <em class="sig-param">requester: tedious.auth.auth.Requester</em><span class="sig-paren">)</span> &#x2192; str<a class="reference internal" href="_modules/tedious/auth/auth.html#Auth.create_refresh_token"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth.create_refresh_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>Creates random string and saves refresh token.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>connection</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">SQLConnectionInterface</span></code>) – Connection to database.</p></li>
+<li><p><strong>requester</strong> (<a class="reference internal" href="#tedious.auth.auth.Requester" title="tedious.auth.auth.Requester"><code class="xref py py-class docutils literal notranslate"><span class="pre">Requester</span></code></a>) – User identification.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Randomly generated refresh token.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.auth.Auth.delete">
+<em class="property">async </em><code class="sig-name descname">delete</code><span class="sig-paren">(</span><em class="sig-param">connection: tedious.sql.interface.SQLConnectionInterface</em>, <em class="sig-param">requester: tedious.auth.auth.Requester</em><span class="sig-paren">)</span> &#x2192; None<a class="reference internal" href="_modules/tedious/auth/auth.html#Auth.delete"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth.delete" title="Permalink to this definition">¶</a></dt>
+<dd><p>Deletes requester account.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>connection</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">SQLConnectionInterface</span></code>) – Connection to database.</p></li>
+<li><p><strong>requester</strong> (<a class="reference internal" href="#tedious.auth.auth.Requester" title="tedious.auth.auth.Requester"><code class="xref py py-class docutils literal notranslate"><span class="pre">Requester</span></code></a>) – User identification.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.auth.Auth.register">
+<em class="property">async </em><code class="sig-name descname">register</code><span class="sig-paren">(</span><em class="sig-param">connection: tedious.sql.interface.SQLConnectionInterface</em>, <em class="sig-param">username</em>, <em class="sig-param">password</em>, <em class="sig-param">role</em><span class="sig-paren">)</span> &#x2192; tedious.auth.auth.Requester<a class="reference internal" href="_modules/tedious/auth/auth.html#Auth.register"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth.register" title="Permalink to this definition">¶</a></dt>
+<dd><p>Registers user and creates new access token.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>connection</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">SQLConnectionInterface</span></code>) – Connection to database.</p></li>
+<li><p><strong>username</strong> – username of user.</p></li>
+<li><p><strong>password</strong> – password to hash.</p></li>
+<li><p><strong>role</strong> – <p>role of user.</p>
+<dl class="simple">
+<dt>Returns:</dt><dd><p>Returns <a class="reference internal" href="#tedious.auth.auth.Requester" title="tedious.auth.auth.Requester"><code class="xref py py-class docutils literal notranslate"><span class="pre">Requester</span></code></a> containing new uuid of user.</p>
+</dd>
+<dt>Raises:</dt><dd><p>ValueError if uuid does already exist.</p>
+</dd>
+</dl>
+</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.auth.Auth.retrieve_refresh_token">
+<em class="property">async </em><code class="sig-name descname">retrieve_refresh_token</code><span class="sig-paren">(</span><em class="sig-param">connection: tedious.sql.interface.SQLConnectionInterface</em>, <em class="sig-param">requester: tedious.auth.auth.Requester</em><span class="sig-paren">)</span> &#x2192; str<a class="reference internal" href="_modules/tedious/auth/auth.html#Auth.retrieve_refresh_token"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth.retrieve_refresh_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>Retrieves existing refresh token for requester.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>connection</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">SQLConnectionInterface</span></code>) – Connection to database.</p></li>
+<li><p><strong>requester</strong> (<a class="reference internal" href="#tedious.auth.auth.Requester" title="tedious.auth.auth.Requester"><code class="xref py py-class docutils literal notranslate"><span class="pre">Requester</span></code></a>) – User identification.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Refresh token of requester.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.auth.Auth.revoke_refresh_token">
+<em class="property">async </em><code class="sig-name descname">revoke_refresh_token</code><span class="sig-paren">(</span><em class="sig-param">connection: tedious.sql.interface.SQLConnectionInterface</em>, <em class="sig-param">requester: tedious.auth.auth.Requester</em><span class="sig-paren">)</span> &#x2192; None<a class="reference internal" href="_modules/tedious/auth/auth.html#Auth.revoke_refresh_token"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth.revoke_refresh_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>Revokes refresh token by setting refresh_token_revoked to true.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>connection</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">SQLConnectionInterface</span></code>) – Connection to database.</p></li>
+<li><p><strong>requester</strong> (<a class="reference internal" href="#tedious.auth.auth.Requester" title="tedious.auth.auth.Requester"><code class="xref py py-class docutils literal notranslate"><span class="pre">Requester</span></code></a>) – User identification.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.auth.Auth.save_refresh_token">
+<em class="property">async </em><code class="sig-name descname">save_refresh_token</code><span class="sig-paren">(</span><em class="sig-param">connection: tedious.sql.interface.SQLConnectionInterface</em>, <em class="sig-param">requester: tedious.auth.auth.Requester</em>, <em class="sig-param">refresh_token: str</em>, <em class="sig-param">expires: datetime.datetime</em><span class="sig-paren">)</span> &#x2192; None<a class="reference internal" href="_modules/tedious/auth/auth.html#Auth.save_refresh_token"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth.save_refresh_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>Updates row entry to include refresh token, refresh_token_expires and refresh_token_expired.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>connection</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">SQLConnectionInterface</span></code>) – Connection to database.</p></li>
+<li><p><strong>requester</strong> (<a class="reference internal" href="#tedious.auth.auth.Requester" title="tedious.auth.auth.Requester"><code class="xref py py-class docutils literal notranslate"><span class="pre">Requester</span></code></a>) – User identification.</p></li>
+<li><p><strong>refresh_token</strong> – Actual refresh token.</p></li>
+<li><p><strong>expires</strong> – Point in time when token is supposed to expire.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.auth.Auth.update_role">
+<em class="property">async </em><code class="sig-name descname">update_role</code><span class="sig-paren">(</span><em class="sig-param">connection: tedious.sql.interface.SQLConnectionInterface</em>, <em class="sig-param">requester: tedious.auth.auth.Requester</em>, <em class="sig-param">role: str</em><span class="sig-paren">)</span> &#x2192; None<a class="reference internal" href="_modules/tedious/auth/auth.html#Auth.update_role"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth.update_role" title="Permalink to this definition">¶</a></dt>
+<dd><p>Updates role of requester.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>connection</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">SQLConnectionInterface</span></code>) – Connection to database.</p></li>
+<li><p><strong>requester</strong> (<a class="reference internal" href="#tedious.auth.auth.Requester" title="tedious.auth.auth.Requester"><code class="xref py py-class docutils literal notranslate"><span class="pre">Requester</span></code></a>) – User identification.</p></li>
+<li><p><strong>role</strong> – New role of requester.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="method">
+<dt id="tedious.auth.auth.Auth.validate_refresh_token">
+<em class="property">async </em><code class="sig-name descname">validate_refresh_token</code><span class="sig-paren">(</span><em class="sig-param">connection: tedious.sql.interface.SQLConnectionInterface</em>, <em class="sig-param">refresh_token: str</em><span class="sig-paren">)</span> &#x2192; tedious.auth.auth.Requester<a class="reference internal" href="_modules/tedious/auth/auth.html#Auth.validate_refresh_token"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.Auth.validate_refresh_token" title="Permalink to this definition">¶</a></dt>
+<dd><p>Validates refresh token for expiration date or if it has been manually revoked.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>connection</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">SQLConnectionInterface</span></code>) – Connection to database.</p></li>
+<li><p><strong>refresh_token</strong> – refresh token received by user</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference internal" href="#tedious.auth.auth.RefreshTokenNotFound" title="tedious.auth.auth.RefreshTokenNotFound"><strong>RefreshTokenNotFound</strong></a> – if token does not exist</p></li>
+<li><p><a class="reference internal" href="#tedious.auth.auth.RefreshTokenExpired" title="tedious.auth.auth.RefreshTokenExpired"><strong>RefreshTokenExpired</strong></a> – if token has expired</p></li>
+<li><p><a class="reference internal" href="#tedious.auth.auth.RefreshTokenRevoked" title="tedious.auth.auth.RefreshTokenRevoked"><strong>RefreshTokenRevoked</strong></a> – if token has been manually revoked</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="section" id="exceptions">
+<h3><a class="toc-backref" href="#id11">Exceptions</a><a class="headerlink" href="#exceptions" title="Permalink to this headline">¶</a></h3>
+<dl class="class">
+<dt id="tedious.auth.auth.UserNotFound">
+<em class="property">class </em><code class="sig-prename descclassname">tedious.auth.auth.</code><code class="sig-name descname">UserNotFound</code><a class="reference internal" href="_modules/tedious/auth/auth.html#UserNotFound"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.UserNotFound" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised when user was not found in database.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="tedious.auth.auth.InvalidPassword">
+<em class="property">class </em><code class="sig-prename descclassname">tedious.auth.auth.</code><code class="sig-name descname">InvalidPassword</code><a class="reference internal" href="_modules/tedious/auth/auth.html#InvalidPassword"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.InvalidPassword" title="Permalink to this definition">¶</a></dt>
+<dd><p>Thrown if passwords do not match.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="tedious.auth.auth.RefreshTokenNotFound">
+<em class="property">class </em><code class="sig-prename descclassname">tedious.auth.auth.</code><code class="sig-name descname">RefreshTokenNotFound</code><a class="reference internal" href="_modules/tedious/auth/auth.html#RefreshTokenNotFound"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.RefreshTokenNotFound" title="Permalink to this definition">¶</a></dt>
+<dd><p>Thrown if refresh token can not be found in database.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="tedious.auth.auth.RefreshTokenExpired">
+<em class="property">class </em><code class="sig-prename descclassname">tedious.auth.auth.</code><code class="sig-name descname">RefreshTokenExpired</code><a class="reference internal" href="_modules/tedious/auth/auth.html#RefreshTokenExpired"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.RefreshTokenExpired" title="Permalink to this definition">¶</a></dt>
+<dd><p>Thrown if refresh token expired.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="tedious.auth.auth.RefreshTokenRevoked">
+<em class="property">class </em><code class="sig-prename descclassname">tedious.auth.auth.</code><code class="sig-name descname">RefreshTokenRevoked</code><a class="reference internal" href="_modules/tedious/auth/auth.html#RefreshTokenRevoked"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.auth.RefreshTokenRevoked" title="Permalink to this definition">¶</a></dt>
+<dd><p>Thrown if refresh token has been manually revoked.</p>
+</dd></dl>
+
+<dl class="class">
+<dt id="tedious.auth.jwt.InvalidToken">
+<em class="property">class </em><code class="sig-prename descclassname">tedious.auth.jwt.</code><code class="sig-name descname">InvalidToken</code><a class="reference internal" href="_modules/tedious/auth/jwt.html#InvalidToken"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#tedious.auth.jwt.InvalidToken" title="Permalink to this definition">¶</a></dt>
+<dd><p>Raised if token is token is invalid.</p>
+</dd></dl>
+
+</div>
+</div>
+<div class="section" id="how-to">
+<h2><a class="toc-backref" href="#id12">How to</a><a class="headerlink" href="#how-to" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="registering-a-user">
+<h3><a class="toc-backref" href="#id13">Registering a user</a><a class="headerlink" href="#registering-a-user" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tedious.auth.auth</span> <span class="kn">import</span> <span class="n">Auth</span>
+<span class="kn">from</span> <span class="nn">tedious.sql.interface</span> <span class="kn">import</span> <span class="n">SQLConnectionInterface</span>
+
+<span class="c1"># create proper connection</span>
+<span class="n">connection</span> <span class="o">=</span> <span class="n">SQLConnectionInterface</span><span class="p">()</span>
+
+<span class="k">await</span> <span class="n">Auth</span><span class="p">()</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="s2">&quot;username&quot;</span><span class="p">,</span> <span class="s2">&quot;password&quot;</span><span class="p">,</span> <span class="s2">&quot;role of user&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="signing-in">
+<h3><a class="toc-backref" href="#id14">Signing in</a><a class="headerlink" href="#signing-in" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tedious.auth.auth</span> <span class="kn">import</span> <span class="n">Auth</span>
+<span class="kn">from</span> <span class="nn">tedious.sql.interface</span> <span class="kn">import</span> <span class="n">SQLConnectionInterface</span>
+
+<span class="c1"># create proper connection</span>
+<span class="n">connection</span> <span class="o">=</span> <span class="n">SQLConnectionInterface</span><span class="p">()</span>
+
+<span class="n">requester</span> <span class="o">=</span> <span class="k">await</span> <span class="n">Auth</span><span class="p">()</span><span class="o">.</span><span class="n">authenticate</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="s2">&quot;username&quot;</span><span class="p">,</span> <span class="s2">&quot;password&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">requester</span><span class="o">.</span><span class="n">uuid</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="creating-an-access-token">
+<h3><a class="toc-backref" href="#id15">Creating an access token</a><a class="headerlink" href="#creating-an-access-token" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">tedious.auth.auth</span> <span class="kn">import</span> <span class="n">Auth</span>
+<span class="kn">from</span> <span class="nn">tedious.sql.interface</span> <span class="kn">import</span> <span class="n">SQLConnectionInterface</span>
+
+<span class="c1"># create proper connection</span>
+<span class="n">connection</span> <span class="o">=</span> <span class="n">SQLConnectionInterface</span><span class="p">()</span>
+
+<span class="n">auth</span> <span class="o">=</span> <span class="n">Auth</span><span class="p">()</span>
+
+<span class="n">requester</span> <span class="o">=</span> <span class="k">await</span> <span class="n">auth</span><span class="o">.</span><span class="n">authenticate</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="s2">&quot;username&quot;</span><span class="p">,</span> <span class="s2">&quot;password&quot;</span><span class="p">)</span>
+
+<span class="n">token</span> <span class="o">=</span> <span class="k">await</span> <span class="n">auth</span><span class="o">.</span><span class="n">create_token</span><span class="p">(</span><span class="n">claims</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;uid&#39;</span><span class="p">:</span> <span class="n">requester</span><span class="o">.</span><span class="n">uuid</span><span class="p">,</span> <span class="s1">&#39;name&#39;</span><span class="p">:</span> <span class="n">requester</span><span class="o">.</span><span class="n">username</span><span class="p">})</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Tedious</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Content</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="asgi.html">Asynchronous Server Gateway Interface (ASGI)</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Authentication</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#introduction">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#classes">Classes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to">How to</a></li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="asgi.html" title="previous chapter">Asynchronous Server Gateway Interface (ASGI)</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, Nils Egger.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="_sources/auth.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

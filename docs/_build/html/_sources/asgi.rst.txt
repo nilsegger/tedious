@@ -1,0 +1,135 @@
+============================================
+Asynchronous Server Gateway Interface (ASGI)
+============================================
+
+.. contents:: :local:
+
+Introduction
+============
+
+The ASGI module consists of the following classes:
+
+1. Request
+    A request object holds all information about the client requesting a resource.
+2. Response
+    A response contains all data which the user will receive.
+3. Resource
+    A resource executes the action which the user requests.
+4. ResourceController
+    A resource controller manages the database connection and routes the user to the correct resource.
+
+
+When the server receives a request, the information contained by the request will be converted into a :class:`~tedious.asgi.request_interface.RequestInterface`
+by a :class:`~tedious.asgi.resource_controller_interface.ResourceControllerInterface`,
+which then passes the request further to a :class:`~tedious.asgi.resource_interface.ResourceInterface`.
+The resource will execute the requested actions and return a :class:`~tedious.asgi.response_interface.ResponseInterface`
+which in the end will be outputted by the ResourceController.
+
+Classes
+=======
+
+Request
+-------
+
+.. autoclass:: tedious.asgi.request_interface.RequestInterface
+    :members:
+
+Response
+--------
+
+.. autoclass:: tedious.asgi.response_interface.ResponseInterface
+    :members:
+
+Resource
+--------
+
+.. autoclass:: tedious.asgi.resource_interface.ResourceInterface
+    :members:
+
+Resource controller
+-------------------
+
+.. autoclass:: tedious.asgi.resource_controller_interface.ResourceControllerInterface
+    :members:
+
+Starlette
+=========
+
+Tedious offers a complete implementation of Starlette_.
+
+.. _Starlette: https://www.starlette.io/
+
+Implemented classes
+-------------------
+
+.. autoclass:: tedious.asgi.starlette.Request
+    :members:
+
+.. autoclass:: tedious.asgi.starlette.ResourceController
+    :members:
+
+Implementing Starlette
+======================
+
+This example shows how you would implement the :class:`~tedious.res.auth_resource.AuthResource` class to allow users to sign in via a POST request on ``/login``.
+
+::
+
+    import tedious.config
+    from tedious.asgi.starlette import ResourceController, StarletteApp
+    from tedious.res import AuthResource
+    from tedious.sql.postgres import PostgreSQLDatabase
+    from starlette.routing import Route
+
+    tedious.config.load_config('config.ini')
+
+    controller = ResourceController(PostgreSQLDatabase(**tedious.config.CONFIG["DB_CREDENTIALS"]))
+
+
+    async def login(request):
+        return await controller.handle(request, AuthResource())
+
+
+    app = StarletteApp(controller, [Route('/login', login, methods=["POST", "PUT", "DELETE"])]).app
+
+Now you could POST a request containing the following JSON body onto ``/login`` and receive an access and refresh token,
+given that the user has been registered with the :class:`tedious.auth.Auth.register` member.
+
+::
+
+    {
+        "username": "test",
+        "password": "12345678
+    }
+
+If you would like to create your own resources, create a class like the following:
+
+::
+
+    from tedious.sql.interface import SQLConnectionInterface
+    from tedious.asgi.response_interface import PlainTextResponse
+    from tedious.asgi.request_interface import RequestInterface
+    from tedious.logger import Logger
+
+    class HelloWorldResource(ResourceInterface):
+
+       async def on_get(self, request: RequestInterface, connection: SQLConnectionInterface, logger: Logger) -> ResponseInterface:
+
+            if request.requester is None:
+                # User is not signed in
+                return PlainTextResponse('Hello World!')
+            else:
+                # user is signed in
+                return PlainTextResponse('Hello {}!'.format(request.requester.uuid))
+
+and then link the new resource by creating a route which finally has to be added to the :class:`~tedious.asgi.starlette.StarletteApp` routes.
+
+::
+
+    async def hello_world(request):
+        return await controller.handle(request, HelloWorldResource())
+
+    app = StarletteApp(controller, [Route('/login', login, methods=["POST", "PUT", "DELETE"]),
+           Route('/hello_world', hello_world, methods=["GET"])]).app
+
+To sign in a user, don't forget to add the ``Authorization`` HTTP header accompanied by a bearer token.

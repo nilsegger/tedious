@@ -1,0 +1,191 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>tedious.asgi.request_interface &#8212; Tedious  documentation</title>
+    <link rel="stylesheet" href="../../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for tedious.asgi.request_interface</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">enum</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Tuple</span>
+<span class="kn">from</span> <span class="nn">tedious.auth.auth</span> <span class="kn">import</span> <span class="n">Requester</span>
+
+
+<span class="k">class</span> <span class="nc">Methods</span><span class="p">(</span><span class="n">enum</span><span class="o">.</span><span class="n">Enum</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Enum of HTTP Methods.&quot;&quot;&quot;</span>
+    <span class="n">GET</span> <span class="o">=</span> <span class="s2">&quot;GET&quot;</span>
+    <span class="n">POST</span> <span class="o">=</span> <span class="s2">&quot;POST&quot;</span>
+    <span class="n">PUT</span> <span class="o">=</span> <span class="s2">&quot;PUT&quot;</span>
+    <span class="n">DELETE</span> <span class="o">=</span> <span class="s2">&quot;DELETE&quot;</span>
+    <span class="n">OPTIONS</span> <span class="o">=</span> <span class="s2">&quot;OPTIONS&quot;</span>
+
+
+<div class="viewcode-block" id="RequestInterface"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.request_interface.RequestInterface">[docs]</a><span class="k">class</span> <span class="nc">RequestInterface</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;The request interface is an abstract class which will be used by :class:`~tedious.asgi.resource_interface.ResourceInterface`</span>
+<span class="sd">        instances to extract all necessary information about who the requester is and what he wants to do.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">client</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;The client identifies the users ip address and port.</span>
+
+<span class="sd">            Returns:</span>
+<span class="sd">                ``Tuple(client ip, client port)``</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">requester</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Requester</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;The requester identifies the signed in user.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            If the user is signed in an instance of :class:`~tedious.auth.auth.Requester`, else ``None``</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">cookies</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns dict of requesters cookies.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">method</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Methods</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Identifies the HTTP methods used by the requester.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            A static attribute of :class:`~tedious.asgi.request_interface.Methods`</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">url</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;The complete url accessed by the user.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            URL as str.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+<div class="viewcode-block" id="RequestInterface.get_body_bytes"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.request_interface.RequestInterface.get_body_bytes">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">get_body_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Reads the requests body as bytes.</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Body as bytes</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+<div class="viewcode-block" id="RequestInterface.get_body_json"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.request_interface.RequestInterface.get_body_json">[docs]</a>    <span class="k">async</span> <span class="k">def</span> <span class="nf">get_body_json</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Ready the requests body and decodes it as json.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Body decoded as dict.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+<div class="viewcode-block" id="RequestInterface.get_header"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.request_interface.RequestInterface.get_header">[docs]</a>    <span class="k">def</span> <span class="nf">get_header</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Retrieve single header value.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Header value as str.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+<div class="viewcode-block" id="RequestInterface.get_param"><a class="viewcode-back" href="../../../asgi.html#tedious.asgi.request_interface.RequestInterface.get_param">[docs]</a>    <span class="k">def</span> <span class="nf">get_param</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Retrieve single parameter value.</span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Parameter value as str.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div></div>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">Tedious</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Content</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../asgi.html">Asynchronous Server Gateway Interface (ASGI)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../auth.html">Authentication</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, Nils Egger.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
